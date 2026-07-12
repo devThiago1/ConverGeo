@@ -3,11 +3,15 @@ from fastapi.middleware.cors import CORSMiddleware
 import psycopg2
 import psycopg2.extras
 import os
+from pathlib import Path
 import h3
 from dotenv import load_dotenv
 
-# Carrega as variáveis de ambiente (o seu DATABASE_URL)
+# 1. Tenta carregar o .env do diretório atual (se rodar da raiz)
 load_dotenv()
+# 2. Tenta carregar o .env da pasta pai (se rodar de dentro de 'api/')
+env_path = Path(__file__).resolve().parent.parent / ".env"
+load_dotenv(dotenv_path=env_path)
 
 # Inicializa a API
 app = FastAPI(
@@ -28,7 +32,10 @@ app.add_middleware(
 
 def get_db_connection():
     """Cria a ligação ao Supabase."""
-    return psycopg2.connect(os.getenv("DATABASE_URL"))
+    db_url = os.getenv("DATABASE_URL")
+    if not db_url:
+        raise ValueError("A variável DATABASE_URL não foi encontrada. Verifique o seu ficheiro .env")
+    return psycopg2.connect(db_url)
 
 @app.get("/score")
 def get_score(
@@ -52,6 +59,7 @@ def get_score(
 
     # 2. Consultar as notas no Supabase
     conn = None
+    cur = None
     try:
         conn = get_db_connection()
         # Usamos DictCursor para que os resultados venham como dicionário em vez de tupla
@@ -94,8 +102,11 @@ def get_score(
         }
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erro no banco de dados: {str(e)}")
+        error_msg = str(e)
+        print(f"\n❌ ERRO FATAL NO BANCO DE DADOS: {error_msg}\n", flush=True)
+        raise HTTPException(status_code=500, detail=f"Erro no banco de dados: {error_msg}")
     finally:
-        if conn:
+        if cur:
             cur.close()
+        if conn:
             conn.close()
