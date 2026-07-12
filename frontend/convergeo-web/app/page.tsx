@@ -95,7 +95,7 @@ export default function App() {
       setLoading(true);
       try {
         const res = await fetch(
-          `http://localhost:8000/score?lat=${lastCoordinate.lat}&lng=${lastCoordinate.lng}&segmento=${activeSegment}`,
+          `https://convergeo.onrender.com/score?lat=${lastCoordinate.lat}&lng=${lastCoordinate.lng}&segmento=${activeSegment}`,
         );
         const data = await res.json();
         setHexData(data);
