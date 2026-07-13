@@ -17,10 +17,9 @@ app = FastAPI(
     version="1.0.0"
 )
 
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # No futuro (produção), mudamos para o domínio do site
+    allow_origins=["*"],  
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -32,13 +31,22 @@ def get_db_connection():
         raise ValueError("A variável DATABASE_URL não foi encontrada. Verifique o seu ficheiro .env")
     return psycopg2.connect(db_url)
 
+def obter_centro_hexagono(h3_index):
+    try:
+        if hasattr(h3, 'cell_to_latlng'):
+            return h3.cell_to_latlng(h3_index)
+        else:
+            return h3.h3_to_geo(h3_index)
+    except:
+        return (0, 0)
+
 @app.get("/score")
 def get_score(
     lat: float = Query(..., description="Latitude do local (ex: -12.9714)"),
     lng: float = Query(..., description="Longitude do local (ex: -38.5014)"),
     segmento: str = Query("food_service", description="Segmento de mercado alvo")
 ):
-    
+
     try:
         if hasattr(h3, 'latlng_to_cell'):
             h3_index = h3.latlng_to_cell(lat, lng, 8)
@@ -74,9 +82,13 @@ def get_score(
                 "mensagem": "Região sem dados suficientes ou fora da área de cobertura."
             }
 
+        hex_lat, hex_lng = obter_centro_hexagono(resultado["h3_index"])
+
         return {
             "status": "sucesso",
             "h3_index": resultado["h3_index"],
+            "lat": hex_lat, 
+            "lng": hex_lng,  
             "segmento": resultado["segmento"],
             "score_total": round(resultado["score_total"], 2),
             "breakdown": {
@@ -87,30 +99,25 @@ def get_score(
         }
 
     except Exception as e:
-        error_msg = str(e)
-        print(f"\n❌ ERRO FATAL NO BANCO DE DADOS: {error_msg}\n", flush=True)
-        raise HTTPException(status_code=500, detail=f"Erro no banco de dados: {error_msg}")
+        raise HTTPException(status_code=500, detail=f"Erro no banco de dados: {str(e)}")
     finally:
         if cur:
             cur.close()
         if conn:
             conn.close()
-            
+
 @app.get("/top")
 def get_top_scores(
     segmento: str = Query("food_service", description="Segmento de mercado alvo"),
     limit: int = Query(5, description="Número de recomendações a devolver")
 ):
-    """
-    Pesquisa e devolve os hexágonos com a maior nota total para um dado segmento.
-    """
+
     conn = None
     cur = None
     try:
         conn = get_db_connection()
         cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
         
-        # Pesquisa os top X hexágonos ordenados pela nota mais alta
         query = """
             SELECT 
                 h3_index,
@@ -132,8 +139,12 @@ def get_top_scores(
 
         recomendacoes = []
         for res in resultados:
+            hex_lat, hex_lng = obter_centro_hexagono(res["h3_index"])
+
             recomendacoes.append({
                 "h3_index": res["h3_index"],
+                "lat": hex_lat, 
+                "lng": hex_lng, 
                 "score_total": round(res["score_total"], 2),
                 "breakdown": {
                     "estrutural": round(res["score_estrutural"], 2) if res["score_estrutural"] else 0,
@@ -149,8 +160,7 @@ def get_top_scores(
         }
 
     except Exception as e:
-        error_msg = str(e)
-        raise HTTPException(status_code=500, detail=f"Erro no banco de dados: {error_msg}")
+        raise HTTPException(status_code=500, detail=f"Erro no banco de dados: {str(e)}")
     finally:
         if cur:
             cur.close()
